@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>🌿 Plant Disease Detector</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
+  <title>🌿 CropCare - Plant Disease Detector</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      padding: 20px;
-      background-color: #f5f5f5;
+      margin: 40px;
+      background-color: #f7f7f7;
     }
     img {
       max-width: 300px;
@@ -19,27 +19,35 @@
     }
     #label-container div {
       font-size: 18px;
-      margin-top: 10px;
+      margin-top: 8px;
+      font-weight: bold;
     }
-    input, button {
+    input, button, a {
       margin-top: 20px;
-      padding: 10px;
+      padding: 10px 20px;
       font-size: 16px;
+    }
+    #user-info {
+      margin-top: 10px;
+      font-weight: bold;
+      color: green;
     }
   </style>
 </head>
 <body>
 
   <h1>🌿 Plant Disease Detector</h1>
-  <input type="file" id="imageUpload" accept="image/*"><br>
-  <img id="preview" alt="Upload preview" /><br>
-  <div id="label-container">Upload an image to detect disease</div>
-  <br>
-  <button id="saveBtn">💾 Save to History</button>
-  <br><br>
+
+  <input type="file" id="imageInput" accept="image/*"><br>
+  <img id="preview" src="#" alt="Upload preview" style="display:none;"><br>
+  <button id="saveBtn">Save Image</button><br>
+
+  <div id="label-container">Upload a plant image</div>
+
+  <p id="user-info"></p>
+
   <a href="history.html" style="
     display: inline-block;
-    padding: 10px 20px;
     background-color: #4CAF50;
     color: white;
     text-decoration: none;
@@ -47,14 +55,11 @@
     font-weight: bold;
   ">📜 View History</a>
 
-  <p id="user-info"></p>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
     import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
     import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-    // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyCqKbvDNvl-fUvW95nmXVJ8XcajUeHXwiY",
       authDomain: "cropcare-85f1f.firebaseapp.com",
@@ -69,50 +74,27 @@
     const db = getFirestore(app);
 
     let currentUser = null;
-    let imageDataURL = null;
+    let previewBase64 = "";
+    let model;
+    let maxPredictions;
 
     onAuthStateChanged(auth, (user) => {
       if (user && user.emailVerified) {
         currentUser = user;
-        document.getElementById("user-info").textContent = `✅ Logged in as: ${user.email}`;
+        document.getElementById("user-info").textContent = `Logged in as: ${user.email}`;
       } else {
-        alert("Please login with a verified email.");
+        alert("Please login with a verified account.");
         window.location.href = "index.html";
       }
     });
 
-    // Load Teachable Machine Model
-    let model, maxPredictions;
     async function loadModel() {
-      const modelURL = "model.json";
+      const modelURL = "model.json";        // Put your model files in same folder
       const metadataURL = "metadata.json";
       model = await tmImage.load(modelURL, metadataURL);
       maxPredictions = model.getTotalClasses();
-      console.log("✅ Model loaded");
+      console.log("✅ Teachable Machine model loaded");
     }
-
-    loadModel();
-
-    // Image Preview and Prediction
-    document.getElementById("imageUpload").addEventListener("change", function (e) {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function (event) {
-        imageDataURL = event.target.result;
-
-        const imgElement = document.getElementById("preview");
-        imgElement.src = imageDataURL;
-
-        imgElement.onload = () => {
-          if (model) {
-            predict(imgElement);
-          }
-        };
-      };
-      reader.readAsDataURL(file);
-    });
 
     async function predict(imageElement) {
       const prediction = await model.predict(imageElement);
@@ -126,47 +108,80 @@
       });
     }
 
-    // Compress + Save to Firestore as base64
+    async function compressAndConvertToBase64(file, maxWidth = 500) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ratio = maxWidth / img.width;
+          canvas.width = maxWidth;
+          canvas.height = img.height * ratio;
+
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.7); // 70% quality
+          const base64String = compressedDataUrl.replace(/^data:image\/(png|jpeg);base64,/, '');
+
+          // Show preview
+          const previewImg = document.getElementById("preview");
+          previewImg.src = compressedDataUrl;
+          previewImg.style.display = "block";
+
+          resolve(base64String);
+        };
+
+        img.onerror = reject;
+        reader.onerror = reject;
+
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById("imageInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        previewBase64 = await compressAndConvertToBase64(file);
+
+        const previewImg = document.getElementById("preview");
+        if (model) {
+          await predict(previewImg);
+        }
+      } catch (err) {
+        console.error("Preview error", err);
+        alert("❌ Failed to preview and detect");
+      }
+    });
+
     document.getElementById("saveBtn").addEventListener("click", async () => {
-      if (!imageDataURL) {
-        alert("Please upload an image first.");
+      if (!previewBase64) {
+        alert("Please select an image first.");
         return;
       }
 
       try {
-        const compressedBase64 = await compressImage(imageDataURL, 0.4); // compress quality to 40%
-
         await addDoc(collection(db, "scans"), {
           userId: currentUser.uid,
-          base64Image: compressedBase64.split(",")[1], // strip data:image/png;base64,
+          base64Image: previewBase64,
           uploadedAt: serverTimestamp()
         });
-
-        alert("✅ Image saved to history!");
+        alert("✅ Image saved to Firestore!");
       } catch (err) {
-        console.error("Upload error:", err);
-        alert("❌ Failed to save image.");
+        console.error("Upload error", err);
+        alert("❌ Upload failed: " + err.message);
       }
     });
 
-    // Compress base64 using Canvas
-    function compressImage(base64Str, quality = 0.5, mimeType = "image/jpeg") {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.src = base64Str;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          canvas.width = img.width;
-          canvas.height = img.height;
-
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0);
-
-          const compressed = canvas.toDataURL(mimeType, quality);
-          resolve(compressed);
-        };
-      });
-    }
+    // Load model on page load
+    loadModel();
   </script>
 </body>
 </html>
