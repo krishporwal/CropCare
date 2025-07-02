@@ -43,17 +43,9 @@
   <button id="saveBtn">Save Image</button><br>
 
   <div id="label-container">Upload a plant image</div>
-
   <p id="user-info"></p>
 
-  <a href="history.html" style="
-    display: inline-block;
-    background-color: #4CAF50;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    font-weight: bold;
-  ">📜 View History</a>
+  <a href="history.html" style="display: inline-block; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">📜 View History</a>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
@@ -75,8 +67,7 @@
 
     let currentUser = null;
     let previewBase64 = "";
-    let model;
-    let maxPredictions;
+    let model, maxPredictions;
 
     onAuthStateChanged(auth, (user) => {
       if (user && user.emailVerified) {
@@ -89,88 +80,69 @@
     });
 
     async function loadModel() {
-      const modelURL = "model.json";        // Put your model files in same folder
+      const modelURL = "model.json"; // must be in the same folder
       const metadataURL = "metadata.json";
       model = await tmImage.load(modelURL, metadataURL);
       maxPredictions = model.getTotalClasses();
       console.log("✅ Teachable Machine model loaded");
     }
 
-    async function predict(imageElement) {
-      const prediction = await model.predict(imageElement);
-      const labelContainer = document.getElementById("label-container");
-      labelContainer.innerHTML = "";
+    async function predict(image) {
+      if (!model) return;
 
-      prediction.forEach(p => {
-        const div = document.createElement("div");
-        div.innerText = `${p.className}: ${(p.probability * 100).toFixed(2)}%`;
-        labelContainer.appendChild(div);
-      });
+      setTimeout(async () => {
+        const predictions = await model.predict(image);
+        const labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+        predictions.forEach(p => {
+          const div = document.createElement("div");
+          div.innerText = `${p.className}: ${(p.probability * 100).toFixed(2)}%`;
+          labelContainer.appendChild(div);
+        });
+      }, 300); // Ensure image has rendered before predicting
     }
 
-    async function compressAndConvertToBase64(file, maxWidth = 500) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-          img.src = e.target.result;
-        };
-
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const ratio = maxWidth / img.width;
-          canvas.width = maxWidth;
-          canvas.height = img.height * ratio;
-
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.7); // 70% quality
-          const base64String = compressedDataUrl.replace(/^data:image\/(png|jpeg);base64,/, '');
-
-          // Show preview
-          const previewImg = document.getElementById("preview");
-          previewImg.src = compressedDataUrl;
-          previewImg.style.display = "block";
-
-          resolve(base64String);
-        };
-
-        img.onerror = reject;
-        reader.onerror = reject;
-
-        reader.readAsDataURL(file);
-      });
+    function compressImage(image, maxWidth = 500) {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const ratio = maxWidth / image.width;
+      canvas.width = maxWidth;
+      canvas.height = image.height * ratio;
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.7);
     }
 
-    document.getElementById("imageInput").addEventListener("change", async (e) => {
+    document.getElementById("imageInput").addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
-      try {
-        previewBase64 = await compressAndConvertToBase64(file);
-
+      const reader = new FileReader();
+      reader.onload = (event) => {
         const previewImg = document.getElementById("preview");
-        if (model) {
-          await predict(previewImg);
-        }
-      } catch (err) {
-        console.error("Preview error", err);
-        alert("❌ Failed to preview and detect");
-      }
+        previewImg.src = event.target.result;
+        previewImg.style.display = "block";
+
+        previewImg.onload = () => {
+          predict(previewImg); // show prediction on preview
+        };
+      };
+      reader.readAsDataURL(file);
     });
 
     document.getElementById("saveBtn").addEventListener("click", async () => {
-      if (!previewBase64) {
-        alert("Please select an image first.");
+      const previewImg = document.getElementById("preview");
+      if (!previewImg.src || previewImg.src === "#") {
+        alert("Please select and preview an image first.");
         return;
       }
+
+      // Compress now only during saving
+      const compressedBase64 = compressImage(previewImg).replace(/^data:image\/jpeg;base64,/, '');
 
       try {
         await addDoc(collection(db, "scans"), {
           userId: currentUser.uid,
-          base64Image: previewBase64,
+          base64Image: compressedBase64,
           uploadedAt: serverTimestamp()
         });
         alert("✅ Image saved to Firestore!");
@@ -180,8 +152,7 @@
       }
     });
 
-    // Load model on page load
-    loadModel();
+    loadModel(); // on load
   </script>
 </body>
 </html>
