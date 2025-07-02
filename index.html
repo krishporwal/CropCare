@@ -2,84 +2,97 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>🌿 Plant Disease Detector - Image Upload</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin: 40px;
-      background-color: #f7f7f7;
-    }
-    img {
-      max-width: 300px;
-      margin-top: 20px;
-      border: 1px solid #ccc;
-    }
-    #label-container div {
-      font-size: 18px;
-      margin-top: 8px;
-      font-weight: bold;
-    }
-    input, button {
-      margin-top: 20px;
-      padding: 10px;
-      font-size: 16px;
-    }
-  </style>
+  <title>CropCare Login / Signup</title>
 </head>
 <body>
+  <h1>CropCare Login / Signup</h1>
 
-  <h1>🌿 Plant Disease Detector</h1>
-  <input type="file" id="imageUpload" accept="image/*"><br>
-  <img id="preview" src="#" alt="Upload preview"><br>
-  <div id="label-container">Upload a plant image</div>
+  <h2>Signup</h2>
+  <input type="email" id="signup-email" placeholder="Email" />
+  <input type="password" id="signup-password" placeholder="Password" />
+  <button id="signupBtn">Sign Up</button>
 
-  <script>
-    const URL = "";
-    let model, maxPredictions;
+  <h2>Login</h2>
+  <input type="email" id="login-email" placeholder="Email" />
+  <input type="password" id="login-password" placeholder="Password" />
+  <button id="loginBtn">Login</button>
 
-    async function loadModel() {
-      const modelURL = "model.json";
-      const metadataURL = "metadata.json";
-      model = await tmImage.load(modelURL, metadataURL);
-      maxPredictions = model.getTotalClasses();
-      console.log("✅ Model loaded");
-    }
+  <script type="module">
+    // ✅ Import Firebase modules
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      sendEmailVerification
+    } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      setDoc
+    } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-    async function predict(imageElement) {
-      const prediction = await model.predict(imageElement);
-      const labelContainer = document.getElementById("label-container");
-      labelContainer.innerHTML = ""; // Clear previous
+    // ✅ Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCqKbvDNvl-fUvW95nmXVJ8XcajUeHXwiY",
+      authDomain: "cropcare-85f1f.firebaseapp.com",
+      projectId: "cropcare-85f1f",
+      storageBucket: "cropcare-85f1f.appspot.com",
+      messagingSenderId: "528066088568",
+      appId: "1:528066088568:web:8fafb687d90ce24360278d",
+      measurementId: "G-MHGTKQ4Y5J"
+    };
 
-      prediction.forEach(p => {
-        const div = document.createElement("div");
-        div.innerText = `${p.className}: ${(p.probability * 100).toFixed(2)}%`;
-        labelContainer.appendChild(div);
-      });
-    }
+    // ✅ Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
 
-    document.getElementById("imageUpload").addEventListener("change", function (e) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
+    // ✅ Signup with Email Verification
+    document.getElementById("signupBtn").addEventListener("click", async () => {
+      const email = document.getElementById("signup-email").value;
+      const password = document.getElementById("signup-password").value;
 
-      reader.onload = function (event) {
-        const imgElement = document.getElementById("preview");
-        imgElement.src = event.target.result;
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
 
-        imgElement.onload = () => {
-          predict(imgElement);
-        };
-      };
+        // ✅ Send email verification
+        await sendEmailVerification(user);
+        alert("Signup successful! A verification email has been sent to your inbox.");
 
-      if (file) {
-        reader.readAsDataURL(file);
+        // ✅ Save user to Firestore
+        await setDoc(doc(db, "users", user.uid), {
+          email: user.email,
+          createdAt: new Date()
+        });
+
+      } catch (error) {
+        alert("Signup error: " + error.message);
       }
     });
 
-    loadModel(); // Load model on page load
-  </script>
+    // ✅ Login only if email is verified
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const email = document.getElementById("login-email").value;
+      const password = document.getElementById("login-password").value;
 
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        if (!user.emailVerified) {
+          alert("Please verify your email before logging in.");
+          return;
+        }
+
+        alert("Login successful!");
+        window.location.href = "disease.html";
+
+      } catch (error) {
+        alert("Login error: " + error.message);
+      }
+    });
+  </script>
 </body>
 </html>

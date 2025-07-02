@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>🌿 CropCare - Plant Disease Detector</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 40px;
+      background-color: #f7f7f7;
+    }
+    img {
+      max-width: 300px;
+      margin-top: 20px;
+      border: 1px solid #ccc;
+    }
+    #label-container div {
+      font-size: 18px;
+      margin-top: 8px;
+      font-weight: bold;
+    }
+    input, button, a {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+    #user-info {
+      margin-top: 10px;
+      font-weight: bold;
+      color: green;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🌿 Plant Disease Detector</h1>
+
+  <input type="file" id="imageInput" accept="image/*"><br>
+  <img id="preview" src="#" alt="Upload preview" style="display:none;"><br>
+  <button id="saveBtn">Save Image</button><br>
+
+  <div id="label-container">Upload a plant image</div>
+
+  <p id="user-info"></p>
+
+  <a href="history.html" style="
+    display: inline-block;
+    background-color: #4CAF50;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+  ">📜 View History</a>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCqKbvDNvl-fUvW95nmXVJ8XcajUeHXwiY",
+      authDomain: "cropcare-85f1f.firebaseapp.com",
+      projectId: "cropcare-85f1f",
+      storageBucket: "cropcare-85f1f.appspot.com",
+      messagingSenderId: "528066088568",
+      appId: "1:528066088568:web:8fafb687d90ce24360278d",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let previewBase64 = "";
+    let model;
+    let maxPredictions;
+
+    onAuthStateChanged(auth, (user) => {
+      if (user && user.emailVerified) {
+        currentUser = user;
+        document.getElementById("user-info").textContent = `Logged in as: ${user.email}`;
+      } else {
+        alert("Please login with a verified account.");
+        window.location.href = "index.html";
+      }
+    });
+
+    async function loadModel() {
+      const modelURL = "model.json";        // Put your model files in same folder
+      const metadataURL = "metadata.json";
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+      console.log("✅ Teachable Machine model loaded");
+    }
+
+    async function predict(imageElement) {
+      const prediction = await model.predict(imageElement);
+      const labelContainer = document.getElementById("label-container");
+      labelContainer.innerHTML = "";
+
+      prediction.forEach(p => {
+        const div = document.createElement("div");
+        div.innerText = `${p.className}: ${(p.probability * 100).toFixed(2)}%`;
+        labelContainer.appendChild(div);
+      });
+    }
+
+    async function compressAndConvertToBase64(file, maxWidth = 500) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+          img.src = e.target.result;
+        };
+
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ratio = maxWidth / img.width;
+          canvas.width = maxWidth;
+          canvas.height = img.height * ratio;
+
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.7); // 70% quality
+          const base64String = compressedDataUrl.replace(/^data:image\/(png|jpeg);base64,/, '');
+
+          // Show preview
+          const previewImg = document.getElementById("preview");
+          previewImg.src = compressedDataUrl;
+          previewImg.style.display = "block";
+
+          resolve(base64String);
+        };
+
+        img.onerror = reject;
+        reader.onerror = reject;
+
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById("imageInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        previewBase64 = await compressAndConvertToBase64(file);
+
+        const previewImg = document.getElementById("preview");
+        if (model) {
+          await predict(previewImg);
+        }
+      } catch (err) {
+        console.error("Preview error", err);
+        alert("❌ Failed to preview and detect");
+      }
+    });
+
+    document.getElementById("saveBtn").addEventListener("click", async () => {
+      if (!previewBase64) {
+        alert("Please select an image first.");
+        return;
+      }
+
+      try {
+        await addDoc(collection(db, "scans"), {
+          userId: currentUser.uid,
+          base64Image: previewBase64,
+          uploadedAt: serverTimestamp()
+        });
+        alert("✅ Image saved to Firestore!");
+      } catch (err) {
+        console.error("Upload error", err);
+        alert("❌ Upload failed: " + err.message);
+      }
+    });
+
+    // Load model on page load
+    loadModel();
+  </script>
+</body>
+</html>
